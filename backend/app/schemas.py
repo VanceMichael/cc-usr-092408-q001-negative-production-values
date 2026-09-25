@@ -1,6 +1,15 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Generic, TypeVar, Dict, Any
 from datetime import date, datetime
+
+T = TypeVar("T")
+
+
+class ImportResult(BaseModel, Generic[T]):
+    created_count: int
+    ids: List[int]
+    records: List[T]
+
 
 class PondBase(BaseModel):
     name: str
@@ -21,11 +30,14 @@ class PondUpdate(BaseModel):
 
 class PondResponse(PondBase):
     id: int
+    version: int = 1
+    superseded_by_id: Optional[int] = None
+    void_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class BatchBase(BaseModel):
     batch_number: str
@@ -50,11 +62,13 @@ class BatchUpdate(BaseModel):
 
 class BatchResponse(BatchBase):
     id: int
+    signed_at: Optional[datetime] = None
+    closed_by: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class StockingRecordBase(BaseModel):
     batch_id: int
@@ -81,10 +95,12 @@ class StockingRecordUpdate(BaseModel):
 
 class StockingRecordResponse(StockingRecordBase):
     id: int
+    version: int = 1
+    void_reason: Optional[str] = None
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class FeedingRecordBase(BaseModel):
     batch_id: int
@@ -111,10 +127,12 @@ class FeedingRecordUpdate(BaseModel):
 
 class FeedingRecordResponse(FeedingRecordBase):
     id: int
+    version: int = 1
+    void_reason: Optional[str] = None
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class WaterQualityRecordBase(BaseModel):
     batch_id: int
@@ -145,10 +163,12 @@ class WaterQualityRecordUpdate(BaseModel):
 
 class WaterQualityRecordResponse(WaterQualityRecordBase):
     id: int
+    version: int = 1
+    void_reason: Optional[str] = None
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class MedicationRecordBase(BaseModel):
     batch_id: int
@@ -181,10 +201,12 @@ class MedicationRecordUpdate(BaseModel):
 
 class MedicationRecordResponse(MedicationRecordBase):
     id: int
+    version: int = 1
+    void_reason: Optional[str] = None
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class CostRecordBase(BaseModel):
     batch_id: int
@@ -213,10 +235,12 @@ class CostRecordUpdate(BaseModel):
 
 class CostRecordResponse(CostRecordBase):
     id: int
+    version: int = 1
+    void_reason: Optional[str] = None
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class HarvestSaleBase(BaseModel):
     batch_id: int
@@ -245,10 +269,109 @@ class HarvestSaleUpdate(BaseModel):
 
 class HarvestSaleResponse(HarvestSaleBase):
     id: int
+    version: int = 1
+    void_reason: Optional[str] = None
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+
+
+# ---------------------------------------------------------------------------
+# 复核 / 更正 / 冲正
+# ---------------------------------------------------------------------------
+
+class ReviewResponse(BaseModel):
+    id: int
+    source: str
+    entity_type: str
+    entity_id: int
+    batch_id: Optional[int] = None
+    field_name: str
+    raw_value: str
+    rule: str
+    message: str
+    entered_settlement: bool
+    status: str
+    resolution_note: Optional[str] = None
+    discovered_at: datetime
+    resolved_at: Optional[datetime] = None
+    reviewed_by: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ScanRequest(BaseModel):
+    source: Optional[str] = "manual_scan"
+
+
+class ScanResult(BaseModel):
+    created_count: int
+    reviews: List[ReviewResponse]
+
+
+class CorrectionCreate(BaseModel):
+    payload: Dict[str, Any]
+    idempotency_key: str
+    reason: Optional[str] = None
+    proposed_by: Optional[str] = None
+
+
+class CorrectionResponse(BaseModel):
+    id: int
+    review_id: int
+    entity_type: str
+    old_entity_id: int
+    new_entity_id: Optional[int] = None
+    idempotency_key: str
+    status: str
+    reason: Optional[str] = None
+    proposed_by: Optional[str] = None
+    approved_by: Optional[str] = None
+    created_at: datetime
+    applied_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CorrectionAction(BaseModel):
+    approved_by: Optional[str] = None
+
+
+class ReversalCreate(BaseModel):
+    review_id: Optional[int] = None
+    entity_type: Optional[str] = None
+    entity_id: Optional[int] = None
+    field_name: Optional[str] = None
+    idempotency_key: str
+    reason: Optional[str] = None
+    created_by: Optional[str] = None
+
+
+class ReversalResponse(BaseModel):
+    id: int
+    review_id: Optional[int] = None
+    batch_id: Optional[int] = None
+    entity_type: str
+    source_entity_id: int
+    field_name: str
+    signed_value: float
+    reverse_value: float
+    net_value: float
+    reason: Optional[str] = None
+    idempotency_key: str
+    created_by: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BatchCloseRequest(BaseModel):
+    closed_by: Optional[str] = None
+
 
 class CostSummaryItem(BaseModel):
     type: str
@@ -266,7 +389,7 @@ class CultureCycleAnalysis(BaseModel):
     stocking_date: date
     harvest_date: Optional[date] = None
     days_cultured: Optional[int] = None
-    initial_quantity: int
+    initial_quantity: float
     harvest_weight: float
     survival_rate: float
     feed_total: float
@@ -276,12 +399,13 @@ class CultureCycleAnalysis(BaseModel):
     total_cost: float
     total_revenue: float
     profit: float
+    data_version: Optional[str] = None
     cost_summary: Optional[dict] = None
     feeding_summary: Optional[dict] = None
 
 class StockingRecordTrace(BaseModel):
     species: str
-    quantity: int
+    quantity: float
     source: Optional[str] = None
     batch_number: Optional[str] = None
     stocking_date: Optional[date] = None
@@ -333,6 +457,7 @@ class PondInfo(BaseModel):
 class BatchTraceability(BaseModel):
     batch: BatchInfo
     pond_info: PondInfo
+    data_version: Optional[str] = None
     stocking_records: List[StockingRecordTrace] = []
     feeding_records: List[FeedingRecordTrace] = []
     water_quality_records: List[WaterQualityRecordTrace] = []
